@@ -59,3 +59,4 @@ Rox_Loader::register();
 // Load DB configuration file and init
 require ROX_APP_PATH . '/config/database.php';
 require ROX_APP_PATH . '/config/init.php';
+require ROX_APP_PATH . '/config/config.php';

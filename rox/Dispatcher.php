@@ -35,6 +35,7 @@ class Rox_Dispatcher {
 		));
 
 		$controller->params = $parsedUrl;
+		$controller->middleware = $this->_loadMiddleware();
 
 		if ( method_exists('Rox_Controller', $parsedUrl['action_method']) ||
 			!method_exists($controller, $parsedUrl['action_method']) ||
@@ -68,5 +69,18 @@ class Rox_Dispatcher {
 		}
 
 		require_once $path;
+	}
+
+	protected function _loadMiddleware() {
+		$middleware = array();
+		try {
+			foreach (Rox_Config::read('middleware') as $Class) {
+				require_once $Class . '.php';
+				$middleware[] = new $Class();
+			}
+		} catch (Rox_KeyException $e) {
+			// it's OK if there is no middleware configured
+		}
+		return $middleware;
 	}
 }

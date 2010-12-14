@@ -34,6 +34,13 @@ class Rox_Controller {
 	public $layout = 'default';
 
 	/**
+	 * List of enabled middleware
+	 *
+	 * @var array
+	 */
+	public $middleware = array();
+
+	/**
 	 * List of helpers to be automatically loaded when rendering
 	 *
 	 * @var array
@@ -46,6 +53,13 @@ class Rox_Controller {
 	 * @var Rox_Request
 	 */
 	public $request;
+
+	/**
+	 * Response object
+	 *
+	 * @var Rox_Response
+	 */
+	public $response;
 
 	/**
 	 * Request params
@@ -157,6 +171,14 @@ class Rox_Controller {
 		exit;
 	}
 
+	function _invokeMiddleware($method, $args) {
+		foreach ($this->middleware as $m) {
+			if (method_exists($m, $method)) {
+				$m->$method($args);
+			}
+		}
+	}
+
 	// ------------------------------------------------
 	//  Callbacks
 	// ------------------------------------------------
@@ -167,6 +189,7 @@ class Rox_Controller {
 	 * @return void
 	 */
 	public function beforeFilter() {
+		$this->_invokeMiddleware('processRequest', array($this->request));
 	}
 
 	/**
@@ -175,5 +198,6 @@ class Rox_Controller {
 	 * @return void
 	 */
 	public function afterFilter() {
+		$this->_invokeMiddleware('processResponse', array($this->request, $this->response));
 	}
 }
