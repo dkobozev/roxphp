@@ -189,7 +189,9 @@ class Rox_Controller {
 	 * @return void
 	 */
 	public function beforeFilter() {
-		$this->_invokeMiddleware('processRequest', array($this->request));
+		$this->_invokeMiddleware('processRequest', array(
+			'request' => &$this->request,
+		));
 	}
 
 	/**
@@ -198,6 +200,9 @@ class Rox_Controller {
 	 * @return void
 	 */
 	public function afterFilter() {
-		$this->_invokeMiddleware('processResponse', array($this->request, $this->response));
+		$this->_invokeMiddleware('processResponse', array(
+			'request' => &$this->request,
+			'response' => &$this->response,
+		));
 	}
 }

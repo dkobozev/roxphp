@@ -14,6 +14,3 @@
 
 // Set the default timezone used by all date/time functions
 date_default_timezone_set('America/New_York');
-
-session_name('ROXAPP');
-session_start();
