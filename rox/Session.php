@@ -37,7 +37,7 @@ class Session {
 		// check session
 		if ($this->_hasConfig()) {
 			if (!$this->isValid()) {
-				// update current session id and delete the old session file
+				// update current session id and delete the old session
 				session_regenerate_id(true);
 				throw new InvalidSessionException();
 			}
@@ -45,7 +45,7 @@ class Session {
 			$this->_writeConfig();
 		}
 
-		// staple the session object onto the request
+		// spear the session object onto the request
 		$args['request']->session = $this;
 	}
 
@@ -55,19 +55,28 @@ class Session {
 	 * @return void
 	 */
 	protected function _init() {
-		$this->cookieLifeTime = 7 * 86400; // a week
-
-		// tell clients to only send cookies over secure connections
+		// if using HTTPS, tell clients to send cookies over the secure connection only
 		if (!empty($_SERVER['HTTPS'])) {
 			ini_set('session.cookie_secure', 1);
 		}
 
+		// session.use_trans_sid        - transparently handle sid passing using URLs if the client rejects cookies. Disabled to prevent session fixation.
+		// session.auto_start           - start sessions automatically (no need to call session_start()). Disabled to be able to configure sessions.
+		// session.use_cookies          - use cookies for passing sids.
+		// session.use_only_cookies     - don't use PHPSESSID from URLs. Enabled to prevent session fixation.
+		// url_rewriter.tags            - specifies which HTML tags are rewritten to include session id if transparent sid support is enabled.
+		// session.cookie_lifetime      - set to 24 hours by default.
+		// session.name                 - name of the session cookie.
 		ini_set('session.use_trans_sid', 0);
 		ini_set('session.auto_start', 0);
+		ini_set('session.use_cookies', 1);
 		ini_set('session.use_only_cookies', 1);
-		ini_set('session.cookie_lifetime', $this->cookieLifeTime);
+		ini_set('url_rewriter.tags', '');
+		ini_set('session.cookie_lifetime', Rox_Config::read('Session.cookie_lifetime', 86400));
 		ini_set('session.name', Rox_Config::read('Session.cookie', 'ROXAPP'));
 
+		// it's possible to support multiple session backends, but only the db
+		// backend has been implemented so far.
 		switch (Rox_Config::read('Session.save')) {
 			case 'db':
 				ini_set('session.save_handler', 'user');
@@ -111,7 +120,7 @@ class Session {
 	 */
 	public function isValid() {
 		$config = $this->read('Config');
-		if (md5($_SERVER['HTTP_USER_AGENT']) !== $config['userAgent']) {
+		if (Rox_Config::read('Session.check_user_agent') && md5($_SERVER['HTTP_USER_AGENT']) !== $config['userAgent']) {
 			return false;
 		}
 		return true;
@@ -140,8 +149,12 @@ class Session {
 	 *
 	 * @return void
 	 */
-	public function delete($key) {
-		unset($_SESSION[$key]);
+	public function delete($key, $warn=false) {
+		if ($warn && !isset($_SESSION[$key])) {
+			throw new Rox_Exception("Key ${key} is not in session.");
+		} elseif (isset($_SESSION[$key])) {
+			unset($_SESSION[$key]);
+		}
 	}
 }
 
@@ -157,32 +170,65 @@ class DBSessionBackend extends Rox_ActiveRecord {
 		return parent::model($class);
 	}
 
-	public static function open() {
+	/**
+	 * Callback executed when the session is being opened.
+	 *
+	 * @return bool
+	 */
+	public static function open($save_path, $session_name) {
 		return true;
 	}
 
+	/**
+	 * Callback executed when the session operation is done.
+	 *
+	 * @return bool
+	 */
 	public static function close() {
 		return true;
 	}
 
+	/**
+	 * Callback executed when the session garbage collector is executed.
+	 *
+	 * @return bool
+	 */
 	public static function gc($max_lifetime=null) {
-		self::model()->deleteAll(array('expire < ' . time()));
+		self::model()->deleteAll(array(
+			'timestamp + ' . Rox_Config::read('Session.lifetime', 84600) . ' < ' . time(),
+		));
 		return true;
 	}
 
+	/**
+	 * Callback executed when the session is read.
+	 *
+	 * @return string
+	 */
 	public static function read($sid) {
-		// Write and Close handlers are called after destructing objects since PHP 5.0.5
-		// Thus destructors can use sessions but session handler can't use objects.
-		// So we are moving session closure before destructing objects. (Thanks, Drupal!)
+		// Since PHP 5.0.5 write and close session handlers are called after
+		// destructing objects. We need to make PHP call session_write_close()
+		// before object destructors, otherwise our handlers won't work.
 		register_shutdown_function('session_write_close');
 
 		$session = self::model()->findFirst(array(
 			'conditions' => array('sid' => $sid),
 		));
-		return $session ? $session->data : '';
+		return $session ? $session->session : '';
 	}
 
+	/**
+	 * Callback executed when the session data is to be saved.
+	 *
+	 * @return bool
+	 */
 	public static function write($sid, $data) {
+		// Do not write to the sessions table if the client does not have
+		// a cookie and new session isn't being created. This should
+		// keep crawlers out of the table.
+		if (empty($_COOKIE[session_name()]) && empty($data)) {
+			return true;
+		}
 		$session = self::model()->findFirst(array(
 			'conditions' => array('sid' => $sid),
 		));
@@ -190,12 +236,19 @@ class DBSessionBackend extends Rox_ActiveRecord {
 			$session = new DBSessionBackend(array('sid' => $sid));
 		}
 		$session->setData(array(
-			'data' => $data,
-			'expires' => time() + Rox_Config::read('Session.timeout', 86400),
+			'session' => $data,
+			'hostname' => $_SERVER['REMOTE_ADDR'],
+			'timestamp' => time(),
 		));
-		return $session->save();
+		$session->save();
+		return true;
 	}
 
+	/**
+	 * Callback executed when the session destroyed using session_destroy().
+	 *
+	 * @return bool
+	 */
 	public static function destroy($sid) {
 		self::model()->deleteAll(array('sid' => $sid));
 		return true;
