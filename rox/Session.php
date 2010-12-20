@@ -34,15 +34,19 @@ class Session {
 		$this->_init();
 		session_start();
 
-		// check session
-		if ($this->_hasConfig()) {
-			if (!$this->isValid()) {
-				// update current session id and delete the old session
-				session_regenerate_id(true);
-				throw new InvalidSessionException();
+		// Check session validity, but only if the client has a cookie. If the
+		// client has no cookie, it must mean it either doesn't accept cookies or
+		// it's the client's first request.
+		if (isset($_COOKIES[session_name()])) {
+			if ($this->_hasConfig()) {
+				if (!$this->isValid()) {
+					// update current session id and delete the old session
+					session_regenerate_id(true);
+					throw new InvalidSessionException();
+				}
+			} else {
+				$this->_writeConfig();
 			}
-		} else {
-			$this->_writeConfig();
 		}
 
 		// spear the session object onto the request
@@ -194,6 +198,7 @@ class DBSessionBackend extends Rox_ActiveRecord {
 	 * @return bool
 	 */
 	public static function gc($max_lifetime=null) {
+		// NOTE: is it too big of a query for a single user?..
 		self::model()->deleteAll(array(
 			'timestamp + ' . Rox_Config::read('Session.lifetime', 84600) . ' < ' . time(),
 		));
