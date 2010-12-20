@@ -37,7 +37,7 @@ class Session {
 		// Check session validity, but only if the client has a cookie. If the
 		// client has no cookie, it must mean it either doesn't accept cookies or
 		// it's the client's first request.
-		if (isset($_COOKIES[session_name()])) {
+		if (isset($_COOKIE[session_name()])) {
 			if ($this->_hasConfig()) {
 				if (!$this->isValid()) {
 					// update current session id and delete the old session
@@ -86,12 +86,12 @@ class Session {
 				ini_set('session.save_handler', 'user');
 				ini_set('session.serialize_handler', 'php');
 				session_set_save_handler(
-					array('DBSessionBackend', 'open'),
-					array('DBSessionBackend', 'close'),
-					array('DBSessionBackend', 'read'),
-					array('DBSessionBackend', 'write'),
-					array('DBSessionBackend', 'destroy'),
-					array('DBSessionBackend', 'gc'));
+					array('DBSessionHandler', 'open'),
+					array('DBSessionHandler', 'close'),
+					array('DBSessionHandler', 'read'),
+					array('DBSessionHandler', 'write'),
+					array('DBSessionHandler', 'destroy'),
+					array('DBSessionHandler', 'gc'));
 			break;
 		}
 	}
@@ -163,17 +163,24 @@ class Session {
 }
 
 /**
- * Backend for database session storage mechanism.
+ * Database session model.
  *
  * @package Rox
  */
-class DBSessionBackend extends Rox_ActiveRecord {
+class DBSession extends Rox_ActiveRecord {
 	protected $_table = 'sessions';
 
 	public static function model($class = __CLASS__) {
 		return parent::model($class);
 	}
+}
 
+/**
+ * Backend for database session storage mechanism.
+ *
+ * @package Rox
+ */
+class DBSessionHandler {
 	/**
 	 * Callback executed when the session is being opened.
 	 *
@@ -199,7 +206,7 @@ class DBSessionBackend extends Rox_ActiveRecord {
 	 */
 	public static function gc($max_lifetime=null) {
 		// NOTE: is it too big of a query for a single user?..
-		self::model()->deleteAll(array(
+		DBSession::model()->deleteAll(array(
 			'timestamp + ' . Rox_Config::read('Session.lifetime', 84600) . ' < ' . time(),
 		));
 		return true;
@@ -216,7 +223,7 @@ class DBSessionBackend extends Rox_ActiveRecord {
 		// before object destructors, otherwise our handlers won't work.
 		register_shutdown_function('session_write_close');
 
-		$session = self::model()->findFirst(array(
+		$session = DBSession::model()->findFirst(array(
 			'conditions' => array('sid' => $sid),
 		));
 		return $session ? $session->session : '';
@@ -234,15 +241,14 @@ class DBSessionBackend extends Rox_ActiveRecord {
 		if (empty($_COOKIE[session_name()]) && empty($data)) {
 			return true;
 		}
-		$session = self::model()->findFirst(array(
+		$session = DBSession::model()->findFirst(array(
 			'conditions' => array('sid' => $sid),
 		));
 		if (!$session) {
-			$session = new DBSessionBackend(array('sid' => $sid));
+			$session = new DBSession(array('sid' => $sid));
 		}
 		$session->setData(array(
 			'session' => $data,
-			'hostname' => $_SERVER['REMOTE_ADDR'],
 			'timestamp' => time(),
 		));
 		$session->save();
@@ -255,7 +261,7 @@ class DBSessionBackend extends Rox_ActiveRecord {
 	 * @return bool
 	 */
 	public static function destroy($sid) {
-		self::model()->deleteAll(array('sid' => $sid));
+		DBSession::model()->deleteAll(array('sid' => $sid));
 		return true;
 	}
 }
