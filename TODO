@@ -1,0 +1,3 @@
+* It might be necessary to close the session manually before issuing a
+  redirect, otherwise session data might be lost (maybe take a look at drupal's
+  db session storage implementation).
